@@ -13,6 +13,72 @@ app.config["SQLALCHEMY_DATABASE_URI"] = 'sqlite:///' + os.path.join(basedir, 'ap
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
 CORS(app)
+bcrypt = Bcrypt(app)
+
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(15), unique=True, nullable=False)
+    password = db.Column(db.String(20), nullable=False)
+
+    def __init__(self, username, password):
+        self.username = username
+        self.password = password
+
+class UserSchema(ma.Schema):
+    class Meta:
+        fields = ("id", "username", "password")
+
+user_schema = UserSchema
+multiple_user_schema = UserSchema(many=True)
+
+@app.route("/user/add", methods=["POST"])
+def add_user():
+    if request.content_type != 'application/json':
+        return jsonify('Error: Data must be in JSON format')
+    post_data = request.get_json()
+    username = post_data.get("username")    
+    password = post_data.get("password")    
+
+
+    possible_duplicate = db.session.query(User).filter(User.username == username).first()
+
+    if possible_duplicate is not None:
+        return jsonify("Error: the username you've entered has already been taken")
+
+    encrypted_password = bcrypt.generate_password_hash(password).decode("utf-8")
+
+    new_user = User(username, encrypted_password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify(f"New user {username} has been added.")
+
+@app.route("/user/verify", methods=["POST"])
+def verify_user():
+    if request.content_type != "application/json":
+        return jsonify("Error: Data must be in JSON format")
+
+    post_data = request.get_json()
+    username = post_data.get("username")    
+    password = post_data.get("password")
+
+    user = db.session.query(User).filter(User.username == username).first()
+
+    if user is None:
+        return jsonify("User NOT verified")
+
+    if bcrypt.check_password_hash(user.password, password) == False:
+        return jsonify("User NOT verified")
+        
+    return jsonify("User has been verified")
+
+
+
+@app.route("/user/get", methods=["GET"])
+def get_users():
+    users = db.session.query(User).all()
+    return jsonify(multiple_user_schema.dump(users))
+
 
 class Book(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -36,6 +102,7 @@ class BookSchema(ma.Schema):
 
 book_schema = BookSchema()
 multiple_book_schema = BookSchema(many=True)
+
 
 
 # endpoint for posting or creating a book
